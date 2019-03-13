@@ -23,22 +23,28 @@ class Capteur():
     y_angle = 0
     temps = 0
 
+    # constante
+    gyro_sensibility = 250.0
+    accel_sensibility = 8.0
+    precision = 1<<15
+    
+
     # Initialisation du capteur
     def __init__(self):
         self.enableAccel() # Activation accelerometre
         self.enableGyro() # Activation gyroscope
         self.enableMagnet() # Activation magnetometre
-        self.enableFilter() # Enable low pass filter
+        self.enableFilter() # Activation filtre passe-bas
 
     # Accelerometre
     def enableAccel(self):
-        self.bus.write_byte_data(0x68, 0x1c, self.bus.read_byte_data(0x68, 0x1c) | 0x10)
+        self.bus.write_byte_data(0x68, 0x1c, self.bus.read_byte_data(0x68, 0x1c) | 0x10) # Reglage de la sensibilite de l'accelerometre
 
     def getAccelData(self):
         data = self.bus.read_i2c_block_data(0x68, 0x3b, 6)
-        x = 16.0 / 65536 * c2(data[0] << 8 | data[1], 16)
-        y = 16.0 / 65536 * c2(data[2] << 8 | data[3], 16)
-        z = 16.0 / 65536 * c2(data[4] << 8 | data[5], 16)
+        x = self.accel_sensibility / self.precision * c2(data[0] << 8 | data[1], 16)
+        y = self.accel_sensibility / self.precision * c2(data[2] << 8 | data[3], 16)
+        z = self.accel_sensibility / self.precision * c2(data[4] << 8 | data[5], 16)
         return (x,y,z)
 
     def getAccelAngle(self):
@@ -54,19 +60,19 @@ class Capteur():
 
     # Gyroscope
     def enableGyro(self):
-        self.bus.write_byte_data(0x68, 0x1b, self.bus.read_byte_data(0x68, 0x1b) | 0x08)
-        for i in range (100):
+        #self.bus.write_byte_data(0x68, 0x1b, self.bus.read_byte_data(0x68, 0x1b) | 0x08) # Reglage de la sensibilite du gyroscope
+        for i in range (200):
             data = self.bus.read_i2c_block_data(0x68, 0x43, 6)
-            self.x_offset -= 4000.0 / 65536 * c2(data[0] << 8 | data[1], 16) / 100
-            self.y_offset -= 4000.0 / 65536 * c2(data[2] << 8 | data[3], 16) / 100
-            self.z_offset -= 4000.0 / 65536 * c2(data[4] << 8 | data[5], 16) / 100
-            time.sleep(0.005)
+            self.x_offset -= self.gyro_sensibility / self.precision * c2(data[0] << 8 | data[1], 16) / 200
+            self.y_offset -= self.gyro_sensibility / self.precision * c2(data[2] << 8 | data[3], 16) / 200
+            self.z_offset -= self.gyro_sensibility / self.precision * c2(data[4] << 8 | data[5], 16) / 200
+            time.sleep(0.01)
 
     def getGyroData(self):
         data = self.bus.read_i2c_block_data(0x68, 0x43, 6)
-        x = 4000.0 / 65536 * c2(data[0] << 8 | data[1], 16) + self.x_offset
-        y = 4000.0 / 65536 * c2(data[2] << 8 | data[3], 16) + self.y_offset
-        z = 4000.0 / 65536 * c2(data[4] << 8 | data[5], 16) + self.z_offset
+        x = self.gyro_sensibility / self.precision * c2(data[0] << 8 | data[1], 16) + self.x_offset
+        y = self.gyro_sensibility / self.precision * c2(data[2] << 8 | data[3], 16) + self.y_offset
+        z = self.gyro_sensibility / self.precision * c2(data[4] << 8 | data[5], 16) + self.z_offset
         return (x,y,z)
 
     def getGyroAngle(self):
@@ -85,15 +91,15 @@ class Capteur():
             y = self.y_angle
             self.x_angle -= y * math.sin(math.radians(z * t))
             self.y_angle += x * math.sin(math.radians(z * t))
-            #self.x_angle = self.x_angle * 0.9996 + xa * 0.0004
-            #self.y_angle = self.y_angle * 0.9996 + ya * 0.0004
+            self.x_angle = self.x_angle * 0.9996 + xa * 0.0004
+            self.y_angle = self.y_angle * 0.9996 + ya * 0.0004
         return (self.x_angle, self.y_angle)
-    
+
     # Magnetometre
     def enableMagnet(self):
         self.bus.write_byte_data(0x68, 0x37, 0x02)
-        self.bus.write_byte_data(0x0c, 0x0a, 0x00) # Power down magnetometer
-        self.bus.write_byte_data(0x0c, 0x0a, 0x01<<4 | 0x06) # Set magnetometer data resolution and sample ODR 100Hz
+        self.bus.write_byte_data(0x0c, 0x0a, 0x00) # Mode Power down du magnetometre
+        self.bus.write_byte_data(0x0c, 0x0a, 0x01<<4 | 0x06) # Reglage du magnetometre
 
     def getMagnetReady(self):
         return self.bus.read_byte_data(0x0c, 0x02) & 0x01
@@ -110,7 +116,7 @@ class Capteur():
             z = c2(data[5] << 8 | data[4],16)*0.0015
         return (s,x,y,z)
 
-    # Low pass filter
+    # Filtre passe-bas
     def enableFilter(self):
         self.bus.write_byte_data(0x68, 0x1a, 0x03)
 
@@ -121,7 +127,7 @@ def printAccel():
 
 def printTemp():
     t = capteur.getTemp()
-    print("Temp   ", "T=", t)
+    print("Temp T=%7.4f" % (t))
 
 def printGyro():
     (x, y, z) = capteur.getGyroData()
@@ -131,7 +137,7 @@ def printGyro():
 def printMagnet():
     if capteur.getMagnetReady():
         (s,x,y,z) = capteur.getMagnetData()
-        print("Magnet ", "S=", s, "X=", x, " Y=", y, " Z=", z)
+        print("Magnet S=%7.4f, X=%7.4f Y=%7.4f Z=%7.4f" % (s, x, y, z))
 
 capteur = Capteur()
 
@@ -139,7 +145,7 @@ while (1):
     for i in range(100):
         capteur.getGyroAngle()
         time.sleep(0.01)
-    #printAccel()
-    #printTemp()
+    printAccel()
+    printTemp()
+    printMagnet()
     printGyro()
-    #printMagnet()
