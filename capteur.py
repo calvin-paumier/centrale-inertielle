@@ -21,12 +21,16 @@ class Capteur():
     # angle
     x_angle = 0
     y_angle = 0
+    x_gyro_angle = 0
+    y_gyro_angle = 0
     temps = 0
+    test = 0
 
     # constante
     gyro_sensibility = 250.0
     accel_sensibility = 8.0
     precision = 1<<15
+    K=0.95 # Constante du filtre
     
 
     # Initialisation du capteur
@@ -50,7 +54,7 @@ class Capteur():
     def getAccelAngle(self):
         (x,y,z) = self.getAccelData()
         l = math.sqrt(x*x + y*y + z*z)
-        return (math.degrees(math.asin(y/l)), math.degrees(math.asin(x/l)))
+        return (math.degrees(math.asin(y/l)), -math.degrees(math.asin(x/l)))
 
     # Temperature
     def getTemp(self):
@@ -61,12 +65,12 @@ class Capteur():
     # Gyroscope
     def enableGyro(self):
         #self.bus.write_byte_data(0x68, 0x1b, self.bus.read_byte_data(0x68, 0x1b) | 0x08) # Reglage de la sensibilite du gyroscope
-        for i in range (200):
+        for i in range (100):
             data = self.bus.read_i2c_block_data(0x68, 0x43, 6)
-            self.x_offset -= self.gyro_sensibility / self.precision * c2(data[0] << 8 | data[1], 16) / 200
-            self.y_offset -= self.gyro_sensibility / self.precision * c2(data[2] << 8 | data[3], 16) / 200
-            self.z_offset -= self.gyro_sensibility / self.precision * c2(data[4] << 8 | data[5], 16) / 200
-            time.sleep(0.01)
+            self.x_offset -= self.gyro_sensibility / self.precision * c2(data[0] << 8 | data[1], 16) / 100
+            self.y_offset -= self.gyro_sensibility / self.precision * c2(data[2] << 8 | data[3], 16) / 100
+            self.z_offset -= self.gyro_sensibility / self.precision * c2(data[4] << 8 | data[5], 16) / 100
+            time.sleep(0.015)
 
     def getGyroData(self):
         data = self.bus.read_i2c_block_data(0x68, 0x43, 6)
@@ -77,24 +81,41 @@ class Capteur():
 
     def getGyroAngle(self):
         (x, y, z) = self.getGyroData()
-        (xa, ya) = self.getAccelAngle()
+        (x_acc_angle, y_acc_angle) = self.getAccelAngle()
         t = self.temps
         self.temps = time.time()
-        if t == 0:
-            self.x_angle = xa
-            self.y_angle = ya
+        if t == 0:  # Initialisation sur plan incline
+            self.x_gyro_angle = x_acc_angle
+            self.y_gyro_angle = y_acc_angle
         else:
             t = self.temps - t
-            self.x_angle -= y * t
-            self.y_angle -= x * t
-            x = self.x_angle
-            y = self.y_angle
-            self.x_angle -= y * math.sin(math.radians(z * t))
-            self.y_angle += x * math.sin(math.radians(z * t))
-            self.x_angle = self.x_angle * 0.9996 + xa * 0.0004
-            self.y_angle = self.y_angle * 0.9996 + ya * 0.0004
-        return (self.x_angle, self.y_angle)
+            #print(t)
+            self.x_gyro_angle += x * t
+            self.y_gyro_angle += y * t
+            x = self.x_gyro_angle
+            y = self.y_gyro_angle
+            self.x_gyro_angle += y * math.sin(math.radians(z * t))
+            self.y_gyro_angle -= x * math.sin(math.radians(z * t))
+        return (self.x_gyro_angle, self.y_gyro_angle)
 
+    # Angle
+    def getAngle(self): #Filtre complementaire
+#        (x_acc_angle, y_acc_angle) = self.getAccelAngle()
+#        (x, y, z) = self.getGyroData()
+#        if (self.test == 0):
+#            self.x_angle = x_acc_angle
+#            self.y_angle = y_acc_angle
+#            self.test=1
+#        else:
+#            self.x_angle = self.K * self.x_angle + self.K * x * 0.0125 + self.K * x_acc_angle
+#            self.y_angle = self.K * self.y_angle + self.K * y * 0.0125 + self.K * y_acc_angle
+#        return(self.x_angle, self.y_angle)
+        (x_acc_angle, y_acc_angle) = self.getAccelAngle()
+        (x_g_angle, y_g_angle) = self.getGyroAngle()
+        self.x_angle = self.K * x_g_angle + (1 - self.K) * x_acc_angle
+        self.y_angle = self.K * y_g_angle + (1 - self.K) * y_acc_angle
+        return(self.x_angle, self.y_angle)
+        
     # Magnetometre
     def enableMagnet(self):
         self.bus.write_byte_data(0x68, 0x37, 0x02)
@@ -122,8 +143,8 @@ class Capteur():
 
 def printAccel():
     (x, y, z) = capteur.getAccelData()
-    (ax, ay) = capteur.getAccelAngle()
-    print("Accel  X=%7.4f Y=%7.4f Z=%7.4f A=%7.4f/%7.4f" % (x, y, z, ax,ay))
+    (x_acc_angle, y_acc_angle) = capteur.getAccelAngle()
+    print("Accel  X=%7.4f Y=%7.4f Z=%7.4f A=%7.4f/%7.4f" % (x, y, z, x_acc_angle, y_acc_angle))
 
 def printTemp():
     t = capteur.getTemp()
@@ -131,21 +152,28 @@ def printTemp():
 
 def printGyro():
     (x, y, z) = capteur.getGyroData()
-    (ax, ay) = capteur.getGyroAngle()
-    print("Gyro   X=%7.4f Y=%7.4f Z=%7.4f A=%7.4f/%7.4f" % (x, y, z, ax,ay))
+    (x_gyro_angle, y_gyro_angle) = capteur.getGyroAngle()
+    print("Gyro   X=%7.4f Y=%7.4f Z=%7.4f A=%7.4f/%7.4f" % (x, y, z, x_gyro_angle, y_gyro_angle))
 
 def printMagnet():
     if capteur.getMagnetReady():
         (s,x,y,z) = capteur.getMagnetData()
         print("Magnet S=%7.4f, X=%7.4f Y=%7.4f Z=%7.4f" % (s, x, y, z))
+        
+def printAngle(): 
+    (xa, ya) = capteur.getAngle()
+    print("Roll = %7.4f, Pitch = %7.4f" %(ya, xa))
 
 capteur = Capteur()
 
+
 while (1):
+    time.sleep(0.01)
     for i in range(100):
         capteur.getGyroAngle()
         time.sleep(0.01)
-    printAccel()
-    printTemp()
-    printMagnet()
-    printGyro()
+    #printAccel()
+    #printTemp()
+    #printMagnet()
+    #printGyro()
+    printAngle()
