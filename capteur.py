@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import smbus
-import time
+import time, threading
 import os
 import math
 
@@ -17,7 +17,12 @@ class Capteur():
     x_offset = 0
     y_offset = 0
     z_offset = 0
-
+    
+    # magnetometre
+    magXcoef = 0
+    magYcoef = 0
+    magZcoef = 0
+    
     # angle
     x_angle = 0
     y_angle = 0
@@ -30,7 +35,7 @@ class Capteur():
     gyro_sensibility = 250.0
     accel_sensibility = 8.0
     precision = 1<<15
-    dt=0.0125
+    dt=0.01
     K=0.96 # Constante du filtre
     
 
@@ -90,15 +95,12 @@ class Capteur():
             self.y_gyro_angle = y_acc_angle
         else:
             t = self.temps - t
-            #print(t)
             self.x_gyro_angle += x * t
             self.y_gyro_angle += y * t
             x = self.x_gyro_angle
             y = self.y_gyro_angle
             self.x_gyro_angle += y * math.sin(math.radians(z * t))
             self.y_gyro_angle -= x * math.sin(math.radians(z * t))
-            self.x_gyro_angle = self.K * (self.x_gyro_angle + x * self.dt) + (1 - self.K) * x_acc_angle
-            self.y_gyro_angle = self.K * (self.y_gyro_angle + y * self.dt) + (1 - self.K) * y_acc_angle
         return (self.x_gyro_angle, self.y_gyro_angle)
 
     # Angle
@@ -113,17 +115,25 @@ class Capteur():
             self.x_angle = self.K * (self.x_angle + x * self.dt) + (1 - self.K) * x_acc_angle
             self.y_angle = self.K * (self.y_angle + y * self.dt) + (1 - self.K) * y_acc_angle
         return(self.x_angle, self.y_angle)
-
-#        (x_acc_angle, y_acc_angle) = self.getAccelAngle()
-#        (x_g_angle, y_g_angle) = self.getGyroAngle()
-#        self.x_angle = self.K * x_g_angle + (1 - self.K) * x_acc_angle
-#        self.y_angle = self.K * y_g_angle + (1 - self.K) * y_acc_angle
-#        return(self.x_angle, self.y_angle)
         
     # Magnetometre
     def enableMagnet(self):
         self.bus.write_byte_data(0x68, 0x37, 0x02)
+        
         self.bus.write_byte_data(0x0c, 0x0a, 0x00) # Mode Power down du magnetometre
+        time.sleep(0.01)
+        
+        self.bus.write_byte_data(0x0c, 0x0a, 0x0F)
+        time.sleep(0.01)
+        
+        datacoef = self.bus.read_i2c_block_data(0x0c, 0x10, 3)
+        self.magXcoef = (datacoef[0] - 128) / 256 + 1.0
+        self.magYcoef = (datacoef[1] - 128) / 256 + 1.0
+        self.magZcoef = (datacoef[2] - 128) / 256 + 1.0
+        
+        self.bus.write_byte_data(0x0c, 0x0a, 0x00)
+        time.sleep(0.01)
+        
         self.bus.write_byte_data(0x0c, 0x0a, 0x01<<4 | 0x06) # Reglage du magnetometre
 
     def getMagnetReady(self):
@@ -136,11 +146,15 @@ class Capteur():
         y = 0
         z = 0
         if (s & 0x08 == 0):
-            x = c2(data[1] << 8 | data[0],16)*0.0015
-            y = c2(data[3] << 8 | data[2],16)*0.0015
-            z = c2(data[5] << 8 | data[4],16)*0.0015
+            x = c2(data[1] << 8 | data[0],16) * 0.0015 * self.magXcoef
+            y = c2(data[3] << 8 | data[2],16) * 0.0015 * self.magYcoef
+            z = c2(data[5] << 8 | data[4],16) * 0.0015 * self.magZcoef
         return (s,x,y,z)
-
+    
+    def getAngleMag(self):
+        s, xmag, ymag, zmag = self.getMagnetData()
+        return (math.degrees(math.asin(ymag/math.sqrt(xmag*xmag + ymag*ymag))))
+    
     # Filtre passe-bas
     def enableFilter(self):
         self.bus.write_byte_data(0x68, 0x1a, 0x03)
@@ -163,18 +177,32 @@ def printMagnet():
     if capteur.getMagnetReady():
         (s,x,y,z) = capteur.getMagnetData()
         print("Magnet S=%7.4f, X=%7.4f Y=%7.4f Z=%7.4f" % (s, x, y, z))
-        
+
 def printAngle(): 
+    global l_x_angle, l_y_angle
     (xa, ya) = capteur.getAngle()
     print("Roll = %7.4f, Pitch = %7.4f" %(ya, xa))
+    
+def printYaw():
+    yaw = capteur.getAngleMag()
+    print("Yaw = %7.4f" %(yaw))
 
 capteur = Capteur()
 
+#threading.Timer(capteur.dt, printAngle).start()
 
-while (1):
-    time.sleep(0.01)
-    for i in range(25):
-        capteur.getAngle()
-        time.sleep(0.01)
-    #printGyro()
-    printAngle()
+
+#while True :
+#    for i in range(100):
+#        t1 = time.time()
+#        capteur.getAngle()
+#        t2 = time.time()
+#        time.sleep(capteur.dt-(t2-t1))
+#    t1 = time.time()
+#    printAngle()
+#    t2 = time.time()
+#    time.sleep(capteur.dt-(t2-t1))
+
+while True:
+    printMagnet()
+    time.sleep(1)
