@@ -151,7 +151,7 @@ class Capteur():
             z = c2(data[5] << 8 | data[4],16) * 0.0015 * self.magZcoef
         return (s,x,y,z)
     
-    def getAngleMag(self):
+    def getMagnetAngle(self):
         s, xmag, ymag, zmag = self.getMagnetData()
         return (math.degrees(math.asin(ymag/math.sqrt(xmag*xmag + ymag*ymag))))
     
@@ -184,7 +184,7 @@ def printAngle():
     print("Roll = %7.4f, Pitch = %7.4f" %(ya, xa))
     
 def printYaw():
-    yaw = capteur.getAngleMag()
+    yaw = capteur.getMagnetAngle()
     print("Yaw = %7.4f" %(yaw))
 
 capteur = Capteur()
