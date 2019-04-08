@@ -153,7 +153,7 @@ class Capteur():
     
     def getMagnetAngle(self):
         s, xmag, ymag, zmag = self.getMagnetData()
-        return (math.degrees(math.asin(ymag/math.sqrt(xmag*xmag + ymag*ymag))))
+        return (math.degrees(math.asin(ymag/math.sqrt(xmag*xmag + ymag*ymag + zmag*zmag))))
     
     # Filtre passe-bas
     def enableFilter(self):
